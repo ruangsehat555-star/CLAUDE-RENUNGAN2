@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aplikasi Renungan Harian</title>
+<style>
+:root{--bg:#f6f4ef;--c:#fff;--t:#222;--m:#777;--a:#2f5d8a;--l:#ddd}
+@media(prefers-color-scheme:dark){:root{--bg:#161a1f;--c:#20262d;--t:#eee;--m:#9aa;--a:#6fa8dc;--l:#38414a}}
+*{box-sizing:border-box}body{margin:0;font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--t)}
+main{max-width:640px;margin:auto;padding:12px 12px 90px}
+.card{background:var(--c);border:1px solid var(--l);border-radius:12px;padding:14px;margin:10px 0}
+h2{margin:6px 0}h3{margin:14px 0 2px;font-size:15px;color:var(--a)}p{margin:0;white-space:pre-wrap}
+blockquote{margin:8px 0;padding:8px 12px;border-left:4px solid var(--a);background:var(--bg);border-radius:6px}
+input,select,textarea{width:100%;padding:10px;margin:4px 0;border:1px solid var(--l);border-radius:8px;background:var(--bg);color:var(--t);font:inherit}
+textarea{min-height:80px}
+button{padding:9px 14px;margin:4px 4px 0 0;border:0;border-radius:8px;background:var(--a);color:#fff;font:inherit}
+button.ghost{background:none;color:var(--a);border:1px solid var(--a)}button.on{background:#2e7d32}button.red{background:#b3261e}
+small,.m{color:var(--m)}.hd{text-align:center;padding:14px 0}.hd b{display:block}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--c);border-top:1px solid var(--l)}
+nav a{flex:1;text-align:center;padding:8px 0;font-size:12px;color:var(--m)}nav a.on{color:var(--a);font-weight:700}
+nav a span{display:block;font-size:20px}.err{color:#b3261e}
+</style></head><body><div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const sb=supabase.createClient('https://unhedebegfrhagnvdyqv.supabase.co','sb_publishable_U_v4r9jl3UfO0S-lBg-vMQ_rVIgd4iq');
+const $=s=>document.querySelector(s),DOM='@komsel.example.com';
+const E=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const T=()=>new Date(Date.now()+7*36e5).toISOString().slice(0,10);
+const addD=(d,n)=>new Date(Date.parse(d)+n*864e5).toISOString().slice(0,10);
+const tgl=d=>new Date(d+'T00:00').toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+const SECT=[['pembukaan','Pembukaan'],['isi','Isi Renungan'],['pesan_utama','Pesan Utama'],['penerapan','Penerapan'],['refleksi','Pertanyaan Refleksi'],['doa','Doa'],['pengalaman','Pengalaman saya']];
+const LBL={judul:'Judul',...Object.fromEntries(SECT)};
+const MODE={cepat:['pesan_utama'],terpandu:['pesan_utama','penerapan','refleksi','doa'],lengkap:['judul','pembukaan','isi','pesan_utama','penerapan','refleksi','doa','pengalaman']};
+let me=null,tab='beranda',view=null,filt='semua',taken=new Set(),members=[],rens=[],amin=[],curId=null;
+
+async function init(){const{data:{session}}=await sb.auth.getSession();session?await enter():render()}
+async function enter(){const{data:{user}}=await sb.auth.getUser();
+ const{data}=await sb.from('anggota').select('*').eq('user_id',user.id).maybeSingle();
+ if(!data){await sb.auth.signOut();me=null;return render('Akun ini belum terdaftar sebagai anggota.')}
+ me=data;await load();render()}
+async function load(){const[a,r,m]=await Promise.all([sb.from('anggota').select('*').order('nama'),
+ sb.from('renungan').select('*').order('tanggal_tayang',{ascending:false}),sb.from('reaksi').select('*')]);
+ members=a.data||[];rens=r.data||[];amin=m.data||[]}
+async function masuk(){const u=$('#u').value.trim().toLowerCase(),p=$('#p').value.trim();
+ const{error}=await sb.auth.signInWithPassword({email:u+DOM,password:p});
+ if(error)return render('Nama pengguna atau PIN salah. ('+error.message+')');await enter()}
+async function keluar(){await sb.auth.signOut();me=null;render()}
+async function go(t){tab=t;view=null;await load();
+ if(t==='tulis'){const{data}=await sb.rpc('tanggal_terisi',{dari:T(),sampai:addD(T(),6)});taken=new Set((data||[]).map(x=>x.tanggal))}
+ render();scrollTo(0,0)}
+function buka(id){view=id;render();scrollTo(0,0)}
+
+const head=()=>`<div class="hd"><div style="font-size:30px;font-weight:700">Aplikasi</div><b style="font-size:22px">Renungan Harian</b><b>GBI House Of Peace</b><small>Dibuat oleh: Mulyono</small></div>`;
+function loginH(msg){return`<main>${head()}<div class="card"><h3>Masuk</h3>
+<input id="u" placeholder="Nama pengguna" autocapitalize="none" autocomplete="username">
+<input id="p" type="password" inputmode="numeric" maxlength="6" placeholder="PIN 6 angka" autocomplete="current-password">
+<button onclick="masuk()">Masuk</button><p class="err">${msg||''}</p>
+<small>Nama pengguna dan PIN diberikan oleh admin. Ini bukan PIN atau kata sandi Gmail, HP, atau akun lain milik Anda.</small></div></main>`}
+
+function render(msg){const A=$('#app');if(!me){A.innerHTML=loginH(msg);return}
+ let b;if(view){const r=rens.find(x=>x.id===view);b=`<button class="ghost" onclick="view=null;render()">← Kembali</button>`+(r?det(r):'')}
+ else b={beranda:pBeranda,tulis:pTulis,feed:pFeed,daftar:pDaftar,anggota:pAnggota}[tab]();
+ const N=[['beranda','🏠','Beranda'],['tulis','✍️','Tulis'],['feed','📖','Feed'],['daftar','📋','Daftar'],['anggota','👥','Anggota']];
+ A.innerHTML=`<main>${b}</main><nav>${N.map(n=>`<a class="${tab==n[0]&&!view?'on':''}" onclick="go('${n[0]}')"><span>${n[1]}</span>${n[2]}</a>`).join('')}</nav>`;
+ if($('#jw'))loadJw()}
+
+function det(r){curId=r.id;const au=members.find(m=>m.user_id===r.penulis_id);
+ const by=r.cadangan?`Oleh: ${E(au?.nama||'Admin')} (Admin)`:`Oleh: ${E(au?.nama||'-')}`;
+ const n=amin.filter(x=>x.renungan_id===r.id).length,mine=amin.some(x=>x.renungan_id===r.id&&x.user_id===me.user_id);
+ const nx=rens.filter(x=>!x.cadangan&&x.tanggal_tayang>(r.tanggal_tayang||T())&&x.tanggal_tayang<=T()).sort((a,b)=>a.tanggal_tayang<b.tanggal_tayang?-1:1)[0];
+ let h=`<div class="card"><small>${r.tanggal_tayang?tgl(r.tanggal_tayang):'Renungan Admin'} · ${by}</small>${r.judul?`<h2>${E(r.judul)}</h2>`:''}
+<blockquote><b>${E(r.ayat_ref)}</b>${r.ayat_teks?`<br>${E(r.ayat_teks)}`:''}</blockquote>`;
+ for(const[k,l]of SECT){if(!r[k])continue;h+=`<h3>${l}</h3><p>${E(r[k])}</p>`;
+  if(k==='refleksi')h+=`<h3>Jawaban Anda</h3><textarea id="jw"></textarea><button class="ghost" onclick="simpanJw()">Simpan jawaban</button>`}
+ h+=`<div style="margin-top:12px"><button class="${mine?'on':''}" onclick="toggleAmin('${r.id}')">🙏 Amin (${n})</button>
+<button class="ghost" onclick="bagikan('${r.id}',0)">Bagikan ringkas</button><button class="ghost" onclick="bagikan('${r.id}',1)">Bagikan lengkap</button>
+${nx?`<button class="ghost" onclick="buka('${nx.id}')">Lihat Renungan Berikutnya →</button>`:''}</div></div>`;return h}
+
+async function loadJw(){const{data}=await sb.from('jawaban').select('isi').eq('renungan_id',curId).eq('user_id',me.user_id).maybeSingle();if(data&&$('#jw'))$('#jw').value=data.isi}
+async function simpanJw(){const v=$('#jw').value.trim();
+ const q=v?sb.from('jawaban').upsert({renungan_id:curId,user_id:me.user_id,isi:v,diperbarui_pada:new Date().toISOString()}):sb.from('jawaban').delete().eq('renungan_id',curId).eq('user_id',me.user_id);
+ const{error}=await q;alert(error?'Gagal: '+error.message:'Jawaban tersimpan.')}
+async function toggleAmin(id){const mine=amin.some(x=>x.renungan_id===id&&x.user_id===me.user_id);
+ const{error}=mine?await sb.from('reaksi').delete().eq('renungan_id',id).eq('user_id',me.user_id):await sb.from('reaksi').insert({renungan_id:id,user_id:me.user_id});
+ if(error)return alert(error.message);amin=(await sb.from('reaksi').select('*')).data||[];render()}
+function bagikan(id,full){const r=rens.find(x=>x.id===id);let t=(full&&r.judul?`*${r.judul}*\n`:'')+`*${r.ayat_ref}*\n${r.ayat_teks||''}\n`;
+ if(full){for(const[k,l]of SECT)if(r[k])t+=`\n*${l}*\n${r[k]}\n`}else if(r.pesan_utama)t+=`\n${r.pesan_utama}\n`;
+ t+=`\nBaca di: ${location.origin}`;navigator.share?navigator.share({text:t}).catch(()=>{}):window.open('https://wa.me/?text='+encodeURIComponent(t))}
+
+function pBeranda(){const t=T();let r=rens.find(x=>!x.cadangan&&x.tanggal_tayang===t),inv='';
+ if(!r){const c=rens.filter(x=>x.cadangan);if(c.length)r=c[Math.floor(Date.parse(t)/864e5)%c.length];
+  inv=`<div class="card">${r?'Hari ini belum ada yang menulis. Tidak apa-apa, kalau ada waktu boleh berbagi renungan. Mau sekarang berbagi?':'Belum ada renungan hari ini. Mau berbagi renungan?'}<br><button onclick="go('tulis')">Tulis renungan</button></div>`}
+ return head()+`<p class="m" style="text-align:center">Halo, ${E(me.nama)} 👋</p>`+(r?det(r):'')+inv}
+
+function pTulis(){const t=T(),adm=me.peran==='admin';let o='';
+ for(let i=0;i<7;i++){const d=addD(t,i),x=taken.has(d);o+=`<option value="${d}" ${x?'disabled':''}>${x?'✓ ':''}${new Date(d+'T00:00').toLocaleDateString('id-ID',{weekday:'short',day:'numeric',month:'short'})}${x?' (terisi)':''}</option>`}
+ const f=(k,rows)=>`<div class="f" data-k="${k}" ${MODE.cepat.includes(k)?'':'style="display:none"'}><small>${LBL[k]}</small><textarea id="${k}" style="min-height:${rows}px"></textarea></div>`;
+ return`<div class="card"><h3>Tulis renungan</h3><small>Tanggal tayang</small><select id="tgl">${o}</select>
+${adm?`<label><input type="checkbox" id="cad" style="width:auto" onchange="$('#tgl').disabled=this.checked"> Simpan sebagai Renungan Admin</label>`:''}
+<small>Mode</small><select id="mode" onchange="setMode(this.value)"><option value="cepat">Cepat</option><option value="terpandu">Terpandu</option><option value="lengkap">Lengkap</option></select>
+<small>Ayat (mis. Filipi 1:6)</small><input id="ayat_ref"><small>Teks ayat</small><textarea id="ayat_teks"></textarea>
+${f('judul',40)}${f('pembukaan',80)}${f('isi',120)}${f('pesan_utama',80)}${f('penerapan',80)}${f('refleksi',60)}${f('doa',80)}${f('pengalaman',80)}
+<button onclick="kirim()">Terbitkan</button></div>`}
+function setMode(m){document.querySelectorAll('.f').forEach(e=>e.style.display=MODE[m].includes(e.dataset.k)?'':'none')}
+async function kirim(){const g=id=>$('#'+id)?.value.trim()||null,mode=$('#mode').value,cad=!!$('#cad')?.checked;
+ const row={penulis_id:me.user_id,mode,ayat_ref:g('ayat_ref'),ayat_teks:g('ayat_teks'),cadangan:cad,tanggal_tayang:cad?null:$('#tgl').value};
+ if(!row.ayat_ref)return alert('Isi dulu ayatnya.');MODE[mode].forEach(k=>row[k]=g(k));
+ const{error}=await sb.from('renungan').insert(row);
+ if(error)return alert(error.code==='23505'?'Tanggal itu sudah terisi.':error.code==='42501'?'Gagal: batas 3 renungan belum tayang sudah tercapai.':'Gagal: '+error.message);
+ await go('daftar')}
+
+function nm(r){const a=members.find(m=>m.user_id===r.penulis_id);return r.cadangan?'Admin':(a?.nama||'-')}
+function pFeed(){const l=rens.filter(r=>!r.cadangan&&r.tanggal_tayang<=T());
+ return`<h2>Feed Renungan</h2>`+(l.map(r=>`<div class="card" onclick="buka('${r.id}')"><small>${tgl(r.tanggal_tayang)} · Oleh: ${E(nm(r))}</small><br><b>${E(r.judul||r.ayat_ref)}</b><p>${E((r.pesan_utama||'').slice(0,140))}</p><small>🙏 ${amin.filter(x=>x.renungan_id===r.id).length}</small></div>`).join('')||'<p class="m">Belum ada renungan tayang.</p>')}
+function st(r){return r.cadangan?'Stok Admin':r.tanggal_tayang>T()?'Belum tayang':'Sudah tayang'}
+function pDaftar(){const F=['semua','Sudah tayang','Belum tayang','milik saya'];
+ const l=rens.filter(r=>filt==='semua'||(filt==='milik saya'?r.penulis_id===me.user_id:st(r)===filt));
+ return`<h2>Daftar Renungan</h2><select onchange="filt=this.value;render()">${F.map(f=>`<option ${f===filt?'selected':''}>${f}</option>`).join('')}</select>`+
+ l.map(r=>{const s=st(r),del=s!=='Sudah tayang'&&(me.peran==='admin'||r.penulis_id===me.user_id);
+ return`<div class="card"><b onclick="buka('${r.id}')">${E(r.judul||r.ayat_ref)}</b><br><small>${s} · tayang: ${r.tanggal_tayang||'-'} · dibuat: ${r.dibuat_pada.slice(0,10)} · Oleh: ${E(nm(r))} · 🙏 ${amin.filter(x=>x.renungan_id===r.id).length}</small>
+${del?`<br><button class="red" onclick="hapusR('${r.id}')">Hapus</button>`:''}</div>`}).join('')}
+async function hapusR(id){if(!confirm('Hapus renungan ini?'))return;const{error}=await sb.from('renungan').delete().eq('id',id);if(error)alert(error.message);await load();render()}
+
+function pAnggota(){const adm=me.peran==='admin';
+ return`<h2>Anggota</h2>`+members.map(m=>`<div class="card"><b>${E(m.nama)}</b> ${m.peran==='admin'?'(Admin)':''}<br><small>${rens.filter(r=>r.penulis_id===m.user_id&&!r.cadangan&&r.tanggal_tayang<=T()).length} renungan tayang${adm?' · @'+E(m.nama_pengguna):''}</small>
+${adm&&m.user_id!==me.user_id?`<br><button class="ghost" onclick="resetPin('${m.user_id}')">Reset PIN</button><button class="red" onclick="hapusA('${m.user_id}')">Hapus</button>`:''}</div>`).join('')+
+ `<div class="card"><button class="ghost" onclick="gantiPin()">Ganti PIN saya</button><button class="ghost" onclick="keluar()">Keluar</button></div>`+
+ (adm?`<div class="card"><h3>Tambah anggota</h3><input id="an" placeholder="Nama"><input id="au" placeholder="Nama pengguna (huruf kecil, tanpa spasi)" autocapitalize="none"><input id="ap" inputmode="numeric" maxlength="6" placeholder="PIN 6 angka"><button onclick="tambah()">Tambah</button></div>`:'')}
+async function gantiPin(){const p=prompt('PIN baru (6 angka):');if(!p)return;if(!/^\d{6}$/.test(p))return alert('PIN harus 6 angka.');
+ const{error}=await sb.auth.updateUser({password:p});alert(error?error.message:'PIN diganti.')}
+async function tambah(){const{error}=await sb.rpc('tambah_anggota',{p_nama:$('#an').value.trim(),p_nama_pengguna:$('#au').value.trim().toLowerCase(),p_pin:$('#ap').value.trim()});
+ if(error)return alert('Gagal: '+error.message);await load();render()}
+async function resetPin(id){const p=prompt('PIN baru untuk anggota ini (6 angka):');if(!p)return;
+ const{error}=await sb.rpc('reset_pin',{p_user_id:id,p_pin:p});alert(error?error.message:'PIN direset.')}
+async function hapusA(id){if(!confirm('Hapus anggota ini?'))return;const{error}=await sb.rpc('hapus_anggota',{p_user_id:id});if(error)alert(error.message);await load();render()}
+init();
+</script></body></html>

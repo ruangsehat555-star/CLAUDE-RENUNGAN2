@@ -317,8 +317,31 @@ function bantuanH(a){const mod=a&&bisaSetuju(),adm=a&&me&&me.peran==='admin';
  D('Kesaksian','Tab <b>Kesaksian</b> untuk menceritakan pertolongan Tuhan dalam hidup Anda. Pilih tampil dengan nama atau <b>Anonim</b>. Kesaksian anggota tayang setelah disetujui admin atau moderator. Admin dan moderator dapat melihat nama asli penulis anonim; anggota lain hanya melihat "Anonim". Anggota memberi reaksi 🙏 (tanpa komentar). Kesaksian hanya bisa dibaca di dalam aplikasi, tidak bisa dibagikan keluar. Status kesaksian Anda ada di <b>Kesaksian saya</b>. Mohon jaga dan jangan menyebarkan isi kesaksian orang lain.')+
  D('Kenapa kesaksian saya belum tayang?','Kesaksian anggota perlu disetujui admin atau moderator dulu. Statusnya tertulis "Menunggu persetujuan" di <b>Kesaksian saya</b>.');}
  if(mod)h+=`<h3>Untuk admin dan moderator</h3>`+D('Menyetujui kesaksian','Di tab <b>Kesaksian</b>, bagian <b>Menunggu persetujuan</b>: ketuk <b>Setujui</b> atau <b>Tolak</b>. Kesaksian yang sudah tayang bisa ditarik lagi dengan <b>Tarik dari tayang</b>. Kesaksian Anda sendiri langsung tayang. Isi kesaksian bersifat pribadi, mohon dijaga.');
- if(adm)h+=D('Mengelola anggota','Di tab <b>Anggota</b>: tambah anggota (tombol acak membuat nama pengguna dan PIN), reset PIN, hapus anggota, jadikan atau cabut moderator, dan proses <b>Pendaftar baru</b>. Setelah itu kirim nama pengguna dan PIN ke calon anggota lewat WhatsApp atau email. Renungan yang dicentang <b>Simpan sebagai Renungan Admin</b> tampil otomatis, satu per hari bergiliran, pada hari tanpa penulis.');
+ if(adm)h+=D('Mengelola anggota','Di tab <b>Anggota</b>: tambah anggota (tombol acak membuat nama pengguna dan PIN), <b>Kirim ulang undangan</b> (membuat PIN baru lalu mengirim pesan undangan lengkap, karena PIN lama tidak bisa dilihat), reset PIN, hapus anggota, jadikan atau cabut moderator, proses <b>Pendaftar baru</b>, dan <b>Unduh cadangan</b> (file berisi semua data, simpan di Google Drive sebulan sekali). Untuk pendaftar baru, kirim nama pengguna dan PIN ke calon anggota lewat WhatsApp atau email. Renungan yang dicentang <b>Simpan sebagai Renungan Admin</b> tampil otomatis, satu per hari bergiliran, pada hari tanpa penulis.');
  return h+`<div class="m" style="margin-top:14px">Butuh bantuan lain? Hubungi admin.</div></div>`}
+let bkBusy=false;
+function pBackup(){let t='';try{t=localStorage.getItem('bkTgl')||''}catch(e){}
+ const lama=t?Math.floor((Date.parse(T())-Date.parse(t))/864e5):null;
+ return`<div class="card"><h3>Cadangan data</h3><div class="m">Unduh satu file berisi semua renungan, kesaksian (dengan nama asli penulis), anggota, pendaftar, jawaban, dan reaksi. PIN tidak ikut karena memang tidak bisa dibaca. Simpan file di Google Drive atau tempat aman, sebaiknya sebulan sekali. Isi file ini bersifat pribadi, jangan dibagikan.</div>
+<div class="note">${t?'Cadangan terakhir: <b>'+tgl(t)+'</b>'+(lama>=30?' (sudah '+lama+' hari, sebaiknya cadangkan lagi)':''):'Belum pernah mencadangkan dari perangkat ini.'}</div>
+<button onclick="unduhBackup()" id="bBk">Unduh cadangan</button> <small id="stBk"></small></div>`}
+async function unduhBackup(){if(bkBusy||!me||me.peran!=='admin')return;bkBusy=true;
+ const st=$('#stBk'),bt=$('#bBk');bt.disabled=true;st.textContent='Menyiapkan...';
+ const TB=['renungan','jawaban','kesaksian','kesaksian_reaksi','reaksi','anggota','pendaftaran'],out={},cat=[];
+ try{
+  for(const n of TB){let all=[],from=0,err=null;
+   for(;;){const{data,error}=await sb.from(n).select('*').range(from,from+999);
+    if(error){err=error.message;break}
+    all=all.concat(data||[]);if(!data||data.length<1000)break;from+=1000}
+   out[n]=all;if(err)cat.push(n+': gagal dibaca ('+err+')')}
+  const meta={aplikasi:'Renungan Harian GBI HOPE',dibuat:new Date().toISOString(),dibuat_oleh:me.nama_pengguna||me.nama||'admin',jumlah:Object.fromEntries(TB.map(n=>[n,out[n].length])),catatan:cat.length?cat:'Semua tabel terbaca.'};
+  const blob=new Blob([JSON.stringify({meta,...out},null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cadangan-renungan-'+T()+'.json';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  try{localStorage.setItem('bkTgl',T())}catch(e){}
+  st.textContent=cat.length?'Selesai, tetapi ada tabel yang gagal dibaca: '+cat.join('; '):'Selesai. Cek file di folder Unduhan.';
+ }catch(e){st.textContent='Gagal: '+e.message}
+ bkBusy=false;bt.disabled=false}
 function pBeranda(){const t=T();let r=rens.find(x=>!x.cadangan&&x.tanggal_tayang===t),inv='';
  if(!r){const c=rens.filter(x=>x.cadangan);if(c.length)r=c[Math.floor(Date.parse(t)/864e5)%c.length];
   inv=`<div class="card"><b>Hari ini belum ada yang menulis.</b><div class="m">Tidak apa-apa, kalau ada waktu boleh berbagi renungan. Mau sekarang berbagi?</div><button onclick="go('tulis')">Saya yang tulis hari ini</button></div>`}
@@ -353,7 +376,7 @@ async function ambilAyat(){
   const vs=(j.data?.verses||[]).filter(v=>v.verse_number>=a&&v.verse_number<=b);
   if(!vs.length)throw new Error('Ayat tidak ditemukan');
   $('#ayat_teks').value=vs.map(v=>v.text).join(' ');
-  st.textContent='Terisi. Boleh diedit.';
+  st.textContent=ab==='Mzm'?'Terisi. Boleh diedit. Periksa nomor ayatnya: nomor ayat Mazmur bisa berbeda antar terjemahan.':'Terisi. Boleh diedit.';
  }catch(e){st.textContent='Gagal mengambil. Ketik teks ayat manual. ('+e.message+')'}
  bt.disabled=false}
 function setMode(m){const i=$('#modeInfo');if(i)i.innerHTML=modeNote(m);document.querySelectorAll('.f').forEach(e=>e.style.display=MODE[m].includes(e.dataset.k)?'':'none')}
@@ -380,8 +403,8 @@ async function hapusR(id){const r=rens.find(x=>x.id===id),tayang=r&&st(r)==='Sud
  const{data,error}=await sb.from('renungan').delete().eq('id',id).select('id');if(error)alert(error.message);else if(!data||!data.length)alert('Tidak berhasil dihapus. Server tidak mengizinkan penghapusan renungan ini.');await load();render()}
 
 function pAnggota(){const adm=me.peran==='admin';
- return`<h2>Anggota</h2>`+lencKartu()+refKartu()+(adm?pPend():'')+(baru?`<div class="card"><h3>${baru.reset?'PIN berhasil direset':'Anggota baru ditambahkan'}</h3><p>Nama: ${E(baru.n)}\nNama pengguna: ${E(baru.u)}\nPIN: ${E(baru.p)}${baru.mod?'\nPeran: Moderator':''}${baru.k?'\nKirim lewat: '+E(baru.k):''}</p>${(baru.wa||!baru.email)?'<button onclick="kirimWA()">Kirim lewat WhatsApp</button>':''}${baru.email?'<button onclick="kirimEmail()">Kirim lewat Email</button>':''}<button class="ghost" onclick="baru=null;render()">Tutup</button></div>`:'')+members.map(m=>`<div class="card"><b>${E(m.nama)}</b> ${m.peran==='admin'?'(Admin)':m.peran==='moderator'?'(Moderator)':''}<br><small>${jmlTayang(m.user_id)} renungan tayang${lencTop(jmlTayang(m.user_id))?' · '+lencTop(jmlTayang(m.user_id))[1]+' '+lencTop(jmlTayang(m.user_id))[2]:''}${adm?' · @'+E(m.nama_pengguna):''}</small>
-${adm&&m.user_id!==me.user_id?`<br>${m.peran==='admin'?'':`<button class="ghost" onclick="aturMod('${m.user_id}',${m.peran==='moderator'?'false':'true'})">${m.peran==='moderator'?'Cabut moderator':'Jadikan moderator'}</button>`}<button class="ghost" onclick="resetPin('${m.user_id}')">Reset PIN</button><button class="red" onclick="hapusA('${m.user_id}')">Hapus</button>`:''}</div>`).join('')+
+ return`<h2>Anggota</h2>`+lencKartu()+refKartu()+(adm?pPend()+pBackup():'')+(baru?`<div class="card"><h3>${baru.reset?'PIN berhasil direset':baru.ulang?'Undangan siap dikirim':'Anggota baru ditambahkan'}</h3><p>Nama: ${E(baru.n)}\nNama pengguna: ${E(baru.u)}\nPIN: ${E(baru.p)}${baru.mod?'\nPeran: Moderator':''}${baru.k?'\nKirim lewat: '+E(baru.k):''}</p>${(baru.wa||!baru.email)?'<button onclick="kirimWA()">Kirim lewat WhatsApp</button>':''}${baru.email?'<button onclick="kirimEmail()">Kirim lewat Email</button>':''}<button class="ghost" onclick="salinUnd()">Salin pesan</button><button class="ghost" onclick="baru=null;render()">Tutup</button></div>`:'')+members.map(m=>`<div class="card"><b>${E(m.nama)}</b> ${m.peran==='admin'?'(Admin)':m.peran==='moderator'?'(Moderator)':''}<br><small>${jmlTayang(m.user_id)} renungan tayang${lencTop(jmlTayang(m.user_id))?' · '+lencTop(jmlTayang(m.user_id))[1]+' '+lencTop(jmlTayang(m.user_id))[2]:''}${adm?' · @'+E(m.nama_pengguna):''}</small>
+${adm&&m.user_id!==me.user_id?`<br>${m.peran==='admin'?'':`<button class="ghost" onclick="aturMod('${m.user_id}',${m.peran==='moderator'?'false':'true'})">${m.peran==='moderator'?'Cabut moderator':'Jadikan moderator'}</button>`}<button class="ghost" onclick="kirimUlang('${m.user_id}')">Kirim ulang undangan</button><button class="ghost" onclick="resetPin('${m.user_id}')">Reset PIN</button><button class="red" onclick="hapusA('${m.user_id}')">Hapus</button>`:''}</div>`).join('')+
  `<div class="card"><button class="ghost" onclick="gantiPin()">${adm?'Ganti kata sandi saya':'Ganti PIN saya'}</button><button class="ghost" onclick="keluar()">Keluar</button><div class="m" style="margin-top:10px">Tampilan:</div>${[['gelap','Gelap'],['terang','Terang'],['otomatis','Otomatis']].map(([k,l])=>`<button class="${tema===k?'':'ghost'}" onclick="setTema('${k}')">${l}</button>`).join('')}</div>`+
  (adm?`<div class="card"><h3>Tambah anggota</h3>${prosesId?`<div class="note">Memproses pendaftar: <b>${E(prosesNama)}</b>. <span class="lnk" onclick="prosesId=null;prosesNama='';render()">Batal</span></div>`:''}<input id="an" placeholder="Nama" value="${E(prosesNama)}"><div class="rw"><input id="au" placeholder="Nama pengguna (huruf kecil, tanpa spasi)" autocapitalize="none"><button class="ghost" onclick="$('#au').value=acakU()">Acak angka</button></div><div class="rw"><input id="ap" inputmode="numeric" maxlength="6" placeholder="PIN 6 angka"><button class="ghost" onclick="$('#ap').value=acakP()">Acak PIN</button></div><input id="aem" type="email" inputmode="email" autocapitalize="none" placeholder="Email (untuk kirim undangan, boleh kosong)" value="${E(emProses())}"><input id="awa" type="tel" inputmode="tel" placeholder="Nomor WhatsApp (untuk kirim undangan)" value="${E(waProses())}"><select id="aperan"><option value="anggota">Peran: Penulis</option><option value="moderator">Peran: Moderator (menyetujui kesaksian)</option></select><button onclick="tambah()">Tambah</button></div>`:'')}
 async function gantiPin(){if(me.peran==='admin'){const q=prompt('Kata sandi baru (minimal 8 karakter):');if(!q)return;if(q.length<8)return alert('Minimal 8 karakter.');const{error:e2}=await sb.auth.updateUser({password:q});return alert(e2?e2.message:'Kata sandi diganti.')}
@@ -400,6 +423,11 @@ function pPend(){const l=pendaftar.filter(x=>x.status==='baru'),s=pendaftar.filt
  (s.length?`<h3>Sudah diproses</h3>`+s.map(x=>`<div class="m" style="margin:6px 0">${E(x.nama)} · ${E(kontak(x))} <span class="lnk" onclick="hapusP('${x.id}')">hapus</span></div>`).join(''):'')+`</div>`}
 function prosesP(id){const x=pendaftar.find(y=>y.id===id);if(!x)return;prosesId=id;prosesNama=x.nama;render();setTimeout(()=>{const e=$('#an');e&&e.scrollIntoView({behavior:'smooth',block:'center'})},50)}
 async function hapusP(id){if(!confirm('Hapus data pendaftar ini?'))return;const{error}=await sb.from('pendaftaran').delete().eq('id',id);if(error)alert(error.message);if(prosesId===id){prosesId=null;prosesNama=''}await load();render()}
+async function kirimUlang(id){const m=members.find(x=>x.user_id===id)||{};
+ if(!confirm('PIN lama tidak bisa dilihat, jadi PIN baru akan dibuat untuk '+(m.nama||'anggota ini')+'. PIN lama tidak berlaku lagi. Lanjutkan?'))return;
+ const p=acakP(),{error}=await sb.rpc('reset_pin',{p_user_id:id,p_pin:p});if(error)return alert(error.message);
+ baru={n:m.nama||'',u:m.nama_pengguna||'',p:p,k:'',mod:m.peran==='moderator',ulang:true};render();scrollTo(0,0)}
+async function salinUnd(){try{await navigator.clipboard.writeText(pesanBaru());alert('Pesan disalin. Tempel di WhatsApp atau tempat lain.')}catch(e){alert('Gagal menyalin. Pakai tombol WhatsApp atau Email.')}}
 async function resetPin(id){const p=prompt('PIN baru untuk anggota ini (6 angka). Sudah diisi PIN acak, boleh diganti:',acakP());if(!p)return;
  const{error}=await sb.rpc('reset_pin',{p_user_id:id,p_pin:p});if(error)return alert(error.message);const m=members.find(x=>x.user_id===id)||{};baru={n:m.nama||'',u:m.nama_pengguna||'',p:p,k:'',reset:true};render();scrollTo(0,0)}
 async function hapusA(id){if(!confirm('Hapus anggota ini?'))return;const{error}=await sb.rpc('hapus_anggota',{p_user_id:id});if(error)alert(error.message);await load();render()}

@@ -373,10 +373,15 @@ async function ambilAyat(){
   const r=await fetch('/api/pasal?ref='+ab+'/'+m[2]);
   const j=await r.json();
   if(!r.ok)throw new Error(j.error||r.status);
-  const vs=(j.data?.verses||[]).filter(v=>v.verse_number>=a&&v.verse_number<=b);
-  if(!vs.length)throw new Error('Ayat tidak ditemukan');
-  $('#ayat_teks').value=vs.map(v=>v.text).join(' ');
-  st.textContent=ab==='Mzm'?'Terisi. Boleh diedit. Periksa nomor ayatnya: nomor ayat Mazmur bisa berbeda antar terjemahan.':'Terisi. Boleh diedit.';
+  const all=j.data?.verses||[];let teks='',tb=false;
+  if(ab==='Mzm'){const full=all.map(v=>v.text).join(' ');
+   if(/\(\d+\s*[-\u2013]\s*\d+\)/.test(full)){const parts=full.split(/\(\d+\s*[-\u2013]\s*(\d+)\)/),mp={},pre=parts[0].trim();if(pre)mp[1]=pre;
+    for(let i=1;i<parts.length;i+=2)mp[+parts[i]]=(parts[i+1]||'').trim();
+    const t=[];for(let n=a;n<=b;n++)if(mp[n])t.push(mp[n]);teks=t.join(' ');tb=true}}
+  if(!tb)teks=all.filter(v=>v.verse_number>=a&&v.verse_number<=b).map(v=>v.text).join(' ');
+  if(!teks)throw new Error('Ayat tidak ditemukan');
+  $('#ayat_teks').value=teks;
+  st.textContent=tb?'Terisi sesuai nomor ayat Alkitab TB. Boleh diedit.':'Terisi. Boleh diedit.';
  }catch(e){st.textContent='Gagal mengambil. Ketik teks ayat manual. ('+e.message+')'}
  bt.disabled=false}
 function setMode(m){const i=$('#modeInfo');if(i)i.innerHTML=modeNote(m);document.querySelectorAll('.f').forEach(e=>e.style.display=MODE[m].includes(e.dataset.k)?'':'none')}
